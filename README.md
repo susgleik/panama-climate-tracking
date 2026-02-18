@@ -23,4 +23,4 @@ Además, se ha implementado **web scraping** para recolectar datos meteorológic
 
 1. Clona el repositorio:
    ```bash
-   git clone https://github.com/tu-usuario/Climate-Data-Management-2024.git
+   git clone https://github.com/susgleik/panama-climate-tracking.git

@@ -2,20 +2,43 @@
 
 ## Descripción
 
-Proyecto de análisis climático que implementa un pipeline ETL completo para datos meteorológicos del año 2024. Recopila datos de 8 estaciones en Panamá, Colombia y Costa Rica desde múltiples fuentes (Meteostat API, web scraping IMHPA, CSV), los limpia/normaliza, los carga en un data warehouse SQLite con modelo estrella, y los visualiza en Power BI.
+Proyecto de análisis climático que implementa un pipeline ETL completo para datos meteorológicos del año 2024. Recopila datos de 8 estaciones en Panamá, Colombia y Costa Rica desde múltiples fuentes (Meteostat API, web scraping IMHPA, CSV), los limpia/normaliza, los carga en un data warehouse SQLite con modelo estrella, y los visualiza en Power BI y Streamlit.
 
 ## Estructura del Proyecto
 
 ```
-datos_crudos/          → Datos crudos (JSON, XML, CSV, HTML scrapeado)
-datos_limpios/         → Datos limpios y normalizados (CSV estandarizado)
-ET/                    → Notebooks de extracción y transformación
-star_model/            → Tablas del modelo estrella exportadas a CSV
-weather.db             → Base de datos SQLite (modelo estrella)
-ClimateTracking2024.pbix → Dashboard Power BI
+panama-climate-tracking/
+├── data/
+│   ├── raw/                     → Datos crudos (JSON, XML, CSV, HTML scrapeado)
+│   ├── cleaned/                 → Datos limpios y normalizados (CSV estandarizado)
+│   └── warehouse/               → Tablas del modelo estrella exportadas a CSV
+├── notebooks/
+│   ├── extraction/              → Notebooks ETL (extracción + transformación + carga)
+│   │   └── database.ipynb       → Carga al modelo estrella SQLite
+│   ├── cleaning/                → Notebooks de limpieza de datos
+│   └── analysis/                → Documentación y análisis (sourceDoc.ipynb)
+├── app/                         → Dashboard web Streamlit
+│   ├── app.py                   → Página principal
+│   ├── utils.py                 → Funciones auxiliares y carga de datos
+│   ├── pages/                   → Páginas adicionales (navegación automática)
+│   └── .streamlit/config.toml   → Configuración de tema
+├── database/
+│   └── weather.db               → Base de datos SQLite (modelo estrella)
+├── dashboards/
+│   └── ClimateTracking2024.pbix → Dashboard Power BI
+├── docs/                        → Documentación del proyecto
+│   ├── ANALISIS_REPOSITORIO.md
+│   ├── MEJORAS.md
+│   └── GUIA_STREAMLIT.md
+├── src/                         → Scripts Python reutilizables (futuro)
+├── tests/                       → Tests unitarios (futuro)
+├── config/                      → Archivos de configuración (futuro)
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── .gitignore
+└── README.md
 ```
-
-Los notebooks de limpieza (`Limpieza_*.ipynb`, `cleanner.ipynb`) están en la raíz. `sourceDoc.ipynb` documenta las fuentes.
 
 ## Stack Tecnológico
 
@@ -23,9 +46,10 @@ Los notebooks de limpieza (`Limpieza_*.ipynb`, `cleanner.ipynb`) están en la ra
 - **SQLite 3** para el data warehouse
 - **Jupyter Notebook** para ETL y análisis
 - **Power BI** para visualización
-- **Streamlit** planificado para dashboard web (ver `GUIA_STREAMLIT.md`)
+- **Streamlit + Plotly** para dashboard web interactivo
+- **Docker** para containerización (Jupyter Lab + Streamlit)
 
-## Esquema de la Base de Datos (SQLite — weather.db)
+## Esquema de la Base de Datos (SQLite — database/weather.db)
 
 Modelo estrella con 4 dimensiones y 1 tabla de hechos:
 
@@ -39,7 +63,7 @@ Modelo estrella con 4 dimensiones y 1 tabla de hechos:
 
 ## Formato Estándar de Datos Limpios
 
-Todos los CSV en `datos_limpios/` siguen este esquema:
+Todos los CSV en `data/cleaned/` siguen este esquema:
 
 ```
 Date       | Tmax (°C) | Tmin (°C) | Tavg (°C) | Prcp (mm) | Wspd (km/h) | Wdir (cardinal) | Estacion | Provincia
@@ -82,33 +106,16 @@ Date       | Tmax (°C) | Tmin (°C) | Tavg (°C) | Prcp (mm) | Wspd (km/h) | Wd
 - **Archivos CSV**: `datos_limpios_{estacion}_{año}.csv` para datos individuales
 - **Notebooks**: `{formato}_{estacion}.ipynb` para ETL, `Limpieza_{estacion}.ipynb` para limpieza
 
-### Patrones recurrentes en notebooks
+### Rutas relativas en notebooks
+Los notebooks están 2 niveles adentro del proyecto (`notebooks/extraction/`, `notebooks/cleaning/`). Las rutas a datos usan `../../data/raw/` y `../../data/cleaned/`. La base de datos se accede con `../../database/weather.db`.
+
 ```python
-# Carga de datos
-df = pd.read_csv("../datos_limpios/datos_limpios_{estacion}_2024.csv")
+# Desde notebooks/extraction/ o notebooks/cleaning/
+df = pd.read_csv("../../data/raw/Ibague-co.csv")
+df.to_csv("../../data/cleaned/datos_limpios_ibague_2024.csv", index=False)
 
-# Reemplazo de nulos
-df.replace(["", "-", "NA", "N/A", "n/a"], np.nan, inplace=True)
-
-# Mapeo de columnas al formato estándar
-columnas_estandar = {
-    'Fecha': 'Date',
-    'Temperatura Máxima (°C)': 'Tmax',
-    'Temperatura Mínima (°C)': 'Tmin',
-    'Temperatura Promedio (°C)': 'Tavg',
-    'Lluvia Mes Actual (mm)': 'Prcp',
-    'Viento Velocidad Máxima (Km/h)': 'Wspd',
-    'Dirección del Viento': 'Wdir'
-}
-df = df.rename(columns=columnas_estandar)
-df = df[list(columnas_estandar.values())]
-
-# Agregar metadatos de estación
-df["Estacion"] = "NombreEstacion"
-df["Provincia"] = "NombreProvincia"
-
-# Guardar
-df.to_csv("../datos_limpios/datos_limpios_{estacion}_2024.csv", index=False)
+with sqlite3.connect("../../database/weather.db") as conn:
+    ...
 ```
 
 ### Coordenadas hardcodeadas (en database.ipynb)
@@ -126,8 +133,6 @@ points = {
 - **Chiriquí tiene solo 334 registros** (falta octubre completo por ConnectionResetError en IMHPA)
 - **Dirección de viento muy imputada**: Bocas del Toro y Santiago tienen 100% faltante en wdir original; Colombia y Costa Rica usan asignación manual por rangos de fechas
 - **`cleanner.ipynb` tiene un NameError**: llama a `analizar_limpieza` (con z) pero la función se define como `analizar_limpieaza` (typo con doble a)
-- **No hay `requirements.txt`** ni `.gitignore`
-- **No hay tests automatizados**
 
 ## Mejores Prácticas de Python para Este Proyecto
 
@@ -162,14 +167,13 @@ path = Path(output_dir) / file
 ```python
 from pathlib import Path
 
-data_dir = Path("../datos_limpios")
+data_dir = Path("../../data/cleaned")
 file_path = data_dir / f"datos_limpios_{station}_2024.csv"
 ```
 
 ### Usar context managers para archivos y conexiones
 ```python
-# Ya se hace correctamente con sqlite3:
-with sqlite3.connect("../weather.db") as conn:
+with sqlite3.connect("../../database/weather.db") as conn:
     ...
 ```
 
@@ -182,17 +186,27 @@ def degrees_to_cardinal(deg: float) -> str:
     return directions[ix]
 ```
 
+## Docker
+
+El proyecto incluye `Dockerfile` y `docker-compose.yml` con dos servicios:
+
+```bash
+docker compose up jupyter     # Jupyter Lab en localhost:8888
+docker compose up streamlit   # Dashboard en localhost:8501
+```
+
 ## Archivos de Documentación
 
-- `ANALISIS_REPOSITORIO.md` — Análisis completo de lo que contiene el repo
-- `MEJORAS.md` — Propuestas de mejoras priorizadas
-- `GUIA_STREAMLIT.md` — Guía paso a paso para implementar dashboard con Streamlit
+- `docs/ANALISIS_REPOSITORIO.md` — Análisis completo de lo que contiene el repo
+- `docs/MEJORAS.md` — Propuestas de mejoras priorizadas
+- `docs/GUIA_STREAMLIT.md` — Guía paso a paso para implementar dashboard con Streamlit
 
 ## Al Modificar Este Proyecto
 
 1. Respetar el formato CSV estándar de 9 columnas (Date, Tmax, Tmin, Tavg, Prcp, Wspd, Wdir, Estacion, Provincia)
-2. Mantener las rutas relativas con `../` desde los notebooks en subcarpetas
-3. Si se agrega una estación nueva, actualizar `points` en `database.ipynb` y re-ejecutar la carga
-4. No modificar archivos en `datos_crudos/` — son datos fuente inmutables
+2. Los notebooks en `notebooks/` usan rutas relativas con `../../` para acceder a `data/` y `database/`
+3. Si se agrega una estación nueva, actualizar `points` en `notebooks/extraction/database.ipynb` y re-ejecutar la carga
+4. No modificar archivos en `data/raw/` — son datos fuente inmutables
 5. Cualquier script nuevo en Python debe seguir snake_case (PEP 8)
 6. Idioma del código: variables y funciones pueden estar en español o inglés, pero los nombres de columnas del CSV siempre en inglés (Date, Tmax, etc.)
+7. La app Streamlit carga datos desde `data/cleaned/main_dataset_pa.csv` via `app/utils.py`
